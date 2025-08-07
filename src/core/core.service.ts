@@ -83,7 +83,11 @@ export class CoreService implements OnModuleInit {
       { module: 'profile', action: 'update', description: 'Actualizar perfil' },
       { module: 'profile', action: 'read', description: 'Ver perfil' },
       { module: 'logs', action: 'read', description: 'Ver logs del sistema' },
-      {module: 'profile-activity', action: 'read', description: 'Ver actividad del perfil'}
+      {module: 'profile-activity', action: 'read', description: 'Ver actividad del perfil'},
+      {module: 'matching', action: 'read', description: 'Ver matching'},
+      {module: 'matching', action: 'create', description: 'Crear matching'},
+      {module: 'matching', action: 'update', description: 'Actualizar matching'},
+      {module: 'matching', action: 'delete', description: 'Eliminar matching'}
     ];
 
     // Actualizar o crear permisos

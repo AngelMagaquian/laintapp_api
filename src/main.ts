@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import * as express from 'express';
 import { HttpErrorInterceptor } from './common/interceptors/http-error.interceptor';
 
 async function bootstrap() {
@@ -14,10 +15,14 @@ async function bootstrap() {
     credentials: true,
   });
 
+  // Configuración de límite de tamaño para el body
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
   // Configuración de Swagger
   const config = new DocumentBuilder()
-    .setTitle('Core API')
-    .setDescription('API core para proyectos futuros')
+    .setTitle('Coop Sup API')
+    .setDescription('API para el sistema de Coop Sup')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
