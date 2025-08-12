@@ -10,6 +10,7 @@ import { CoreModule } from './core/core.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { RolesModule } from './roles/roles.module';
 import { MatchingModule } from './matching/matching.module';
+import { NotMatchingModule } from './not-matching/not-matching.module';
 
 @Module({
   imports: [
@@ -23,7 +24,8 @@ import { MatchingModule } from './matching/matching.module';
     CoreModule,
     PermissionsModule,
     RolesModule,
-    MatchingModule
+    MatchingModule,
+    NotMatchingModule
   ],
   providers: [
     {
