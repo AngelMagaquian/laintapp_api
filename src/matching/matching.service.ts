@@ -22,7 +22,7 @@ export class MatchingService {
         const matchingResults: MatchResult[] = [];
         const notMatchingXrpItems: any[] = [];
 
-        const modo_types = ['PERSONAL_PAY', 'MODO', 'UALA']
+        const modo_types = ['PERSONAL_PAY', 'MODO', 'UALA', 'NARANJA', 'MERCADO PAGO']
         const res = xrpArray.map((xrpItem, index) => {
             let bestMatch: any = null;
             let bestLevel: MatchResult['matchLevel'] = MatchLevel.RED;
@@ -39,7 +39,7 @@ export class MatchingService {
 
                 if(providerItem.proveedor === 'fiserv' && xrpItem.card_type === 'MODO'){
                     tipoIgual = modo_types.includes(xrpItem.card_type.toUpperCase()) ? true : false;
-                }else if(providerItem.proveedor === 'nave'){
+                }else if(providerItem.proveedor === 'nave' || providerItem.proveedor === 'naranja'){
                     tipoIgual = true
                 }else{
                     tipoIgual = this.compareStringValues(xrpItem, providerItem, 'card_type');
@@ -116,7 +116,7 @@ export class MatchingService {
         return String(xrp[field]).trim().toLowerCase() == String(provider[field]).trim().toLowerCase();
     }
 
-    async saveMatchingResults(matchingResults: MatchResult[]): Promise<any> {
+    async saveMatchingResults(matchingResults: any[]): Promise<any> {
         console.log({ matchingResults });
         try {
             const transformedResults = matchingResults.map(result => ({
@@ -125,7 +125,7 @@ export class MatchingService {
                 matchLevel: result.matchLevel,
                 matchedFields: result.matchedFields,
                 status: result.status,
-                provider_name: result.provider?.proveedor || result.provider?.provider || 'unknown',
+                provider_name: result.provider_name,
                 transaction_id: result.provider?.transaction_id || result.xrp?.posnet?.toString() || 'unknown',
                 reviewedBy: result.reviewedBy ? new Types.ObjectId(result.reviewedBy) : undefined,
                 file_date: result.file_date ? new Date(result.file_date) : undefined,
