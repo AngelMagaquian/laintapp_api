@@ -5,6 +5,7 @@ import { AppModule } from './app.module';
 import * as express from 'express';
 import { HttpErrorInterceptor } from './common/interceptors/http-error.interceptor';
 import * as fs from 'fs';
+
 async function bootstrap() {
   const httpsOptions = {
     key: fs.readFileSync('/etc/letsencrypt/live/nexogroup.ar/privkey.pem'),
