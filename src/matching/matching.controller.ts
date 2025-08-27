@@ -8,7 +8,7 @@ import { MatchingService } from './matching.service';
 import { ApiProperty } from '@nestjs/swagger';
 import { IsArray } from 'class-validator';
 import { MatchResult } from './dto/matching-file';
-import { MatchingResponseDto } from './dto/matching-response.dto';
+import { MatchingResponseDto, FormattedMatchingDto } from './dto/matching-response.dto';
 
 class MatchingDto {
   @ApiProperty({ 
@@ -56,7 +56,32 @@ export class MatchingController {
       description: 'Resultados del matching guardados exitosamente'
     })
     async saveMatchingResults(@Body() matchingResults: MatchResult[]): Promise<any> {
+      console.log("entroooo")
         return this.matchingService.saveMatchingResults(matchingResults);
+    }
+
+    @Get('get-matching/:startDate/:endDate/:provider')
+    @UseGuards(JwtAuthGuard, JwtPermissionsGuard)
+    @RequirePermission('matching', PermissionAction.READ)
+    @ApiOperation({ summary: 'Obtener los resultados del matching' })
+    @ApiResponse({ 
+      status: 200, 
+      description: 'Resultados del matching obtenidos exitosamente',
+      type: [FormattedMatchingDto]
+    })
+    async getMatchingResults(@Param('startDate') startDate: string, @Param('endDate') endDate: string, @Param('provider') provider: string): Promise<FormattedMatchingDto[]> {
+      console.log({startDate, endDate, provider});
+      
+      // Convertir los strings de fecha a objetos Date
+      const startDateObj = new Date(startDate);
+      const endDateObj = new Date(endDate);
+      
+      // Validar que las fechas sean válidas
+      if (isNaN(startDateObj.getTime()) || isNaN(endDateObj.getTime())) {
+        throw new Error('Formato de fecha inválido');
+      }
+      
+      return this.matchingService.getMatchingResults(startDateObj, endDateObj, provider);
     }
 
     @Post('save-not-matching')
@@ -80,9 +105,18 @@ export class MatchingController {
       status: 200, 
       description: 'Proveedores sin match obtenidos exitosamente'
     })
-    async getNotMatchingResults(@Param('date') date: Date): Promise<any> {
+    async getNotMatchingResults(@Param('date') date: string): Promise<any> {
         console.log({date});
-        return this.matchingService.getNotMatchingResults(date);
+        
+        // Convertir el string de fecha a objeto Date
+        const dateObj = new Date(date);
+        
+        // Validar que la fecha sea válida
+        if (isNaN(dateObj.getTime())) {
+          throw new Error('Formato de fecha inválido');
+        }
+        
+        return this.matchingService.getNotMatchingResults(dateObj);
     }
 
     @Delete('delete-not-matching/:_id')

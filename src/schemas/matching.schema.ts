@@ -17,35 +17,32 @@ export enum MatchStatus {
 
 @Schema({ timestamps: true })
 export class Matching extends Document {
-  @Prop({ 
-    type: Object, 
-    required: true,
-    additionalProperties: true
-  })
-  xrp: Record<string, any>;
+  @Prop({ type: String, required: true })
+  provider: string;
 
-  @Prop({ 
-    type: Object, 
-    required: false,
-    additionalProperties: true,
-    default: null
-  })
-  provider: Record<string, any> | null;
+  @Prop({ type: String, required: false, default: null })
+  transaction_id: string | null;
 
-  @Prop({ 
-    required: true,
-    enum: Object.values(MatchLevel),
-    type: String,
-    default: MatchLevel.RED
-  })
-  matchLevel: MatchLevel;
+  @Prop({ type: String, required: true })
+  transaction_type: string;
 
-  @Prop({ 
-    type: [String],
-    required: true,
-    default: []
-  })
-  matchedFields: string[];
+  @Prop({ type: Date, required: true })
+  file_date: Date;
+
+  @Prop({ type: Number, required: false })
+  amount: number;
+
+  @Prop({ type: String, required: false })
+  card_type: string;
+
+  @Prop({ type: String, required: false })
+  cupon: string;
+
+  @Prop({ type: String, required: false })
+  lote: string;
+
+  @Prop({ type: String, required: false })
+  tpv: string;
 
   @Prop({ 
     required: true,
@@ -58,17 +55,26 @@ export class Matching extends Document {
   @Prop({ type: Types.ObjectId, ref: 'User', required: false })
   reviewedBy?: Types.ObjectId;
 
-  @Prop({ type: String, required: true })
-  provider_name: string;
+  @Prop({ 
+    type: String,
+    required: true
+  })
+  sucursal: string|null;
 
-  @Prop({ type: String, required: true })
-  transaction_id: string;
+  @Prop({ 
+    type: [String],
+    required: true,
+    default: []
+  })
+  matchedFields: string[];
 
-  @Prop({ type: Date, required: false })
-  file_date: Date;
-
-  @Prop({ type: String, required: true, enum: ['credit', 'debit'] })
-  transaction_type: 'credit' | 'debit';
+  @Prop({ 
+    required: true,
+    enum: Object.values(MatchLevel),
+    type: String,
+    default: MatchLevel.RED
+  })
+  matchLevel: MatchLevel;
 }
 
 export const MatchingSchema = SchemaFactory.createForClass(Matching);

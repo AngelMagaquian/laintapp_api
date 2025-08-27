@@ -7,18 +7,26 @@ import { HttpErrorInterceptor } from './common/interceptors/http-error.intercept
 import * as fs from 'fs';
 
 async function bootstrap() {
-  const httpsOptions = {
-    key: fs.readFileSync('/etc/letsencrypt/live/nexogroup.ar/privkey.pem'),
-    cert: fs.readFileSync('/etc/letsencrypt/live/nexogroup.ar/fullchain.pem'),
-  };
 
-  const app = await NestFactory.create(AppModule, {
+
+  let app = null;
+
+  if(!process.env.ENVIRONMENT || process.env.ENVIRONMENT === 'PROD'){
+    const httpsOptions = {
+      key: fs.readFileSync('/etc/letsencrypt/live/nexogroup.ar/privkey.pem'),
+      cert: fs.readFileSync('/etc/letsencrypt/live/nexogroup.ar/fullchain.pem'),
+    };
+
+  app = await NestFactory.create(AppModule, {
     httpsOptions,
   });
+} else {
+  app = await NestFactory.create(AppModule);
+}
 
   // Configuración de CORS
   app.enableCors({
-    origin: ['http://localhost/', 'https://168.181.185.21/', 'https://nexogroup.ar/', 'http://nexogroup.ar','http//168.181.185.21'],
+    origin: ['http://localhost/','http://localhost:3000','https://168.181.185.21/', 'https://nexogroup.ar/', 'http://nexogroup.ar','http//168.181.185.21','*'],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
  });

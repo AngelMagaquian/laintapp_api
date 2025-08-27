@@ -21,6 +21,9 @@ export class NotMatching extends Document {
 
   @Prop({ type: String, required: false })
   transaction_type: string;
+
+  @Prop({ type: String, required: false })
+  sucursal: string|null;
 }
 
 export const NotMatchingSchema = SchemaFactory.createForClass(NotMatching);
