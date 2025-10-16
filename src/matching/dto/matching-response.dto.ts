@@ -106,6 +106,8 @@ export class FormattedMatchingDto {
   })
   @IsEnum(MatchLevel)
   matchLevel: MatchLevel;
+    estimated_net: any;
+    estimated_payrollDate: any;
 }
 
 export class MatchingResponseDto {

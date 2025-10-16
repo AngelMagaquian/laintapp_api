@@ -1,4 +1,4 @@
-import { Controller, Post, UseGuards, Body, Get, Param, Delete } from '@nestjs/common';
+import { Controller, Post, UseGuards, Body, Get, Param, Delete, UsePipes, ValidationPipe } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { JwtPermissionsGuard } from '../auth/jwt-permissions.guard';
@@ -6,7 +6,7 @@ import { RequirePermission } from '../common/decorators/require_permission.decor
 import { PermissionAction } from '../schemas/permission.schema';
 import { MatchingService } from './matching.service';
 import { ApiProperty } from '@nestjs/swagger';
-import { IsArray } from 'class-validator';
+import { IsArray, IsString } from 'class-validator';
 import { MatchResult } from './dto/matching-file';
 import { MatchingResponseDto, FormattedMatchingDto } from './dto/matching-response.dto';
 
@@ -26,6 +26,16 @@ class MatchingDto {
   })
   @IsArray()
   providerArray: any[];
+}
+
+class PayrollMatchingDto {
+  @ApiProperty({ description: 'Nombre del proveedor' })
+  @IsString()
+  provider: string;
+
+  @ApiProperty({ description: 'Datos de nómina a matchear', type: [Object] })
+  @IsArray()
+  data: any[];
 }
 
 @ApiTags('matching')
@@ -60,7 +70,7 @@ export class MatchingController {
         return this.matchingService.saveMatchingResults(matchingResults);
     }
 
-    @Get('get-matching/:startDate/:endDate/:provider')
+    @Get('get-matching/:startDate/:endDate/:provider/:status')
     @UseGuards(JwtAuthGuard, JwtPermissionsGuard)
     @RequirePermission('matching', PermissionAction.READ)
     @ApiOperation({ summary: 'Obtener los resultados del matching' })
@@ -69,66 +79,33 @@ export class MatchingController {
       description: 'Resultados del matching obtenidos exitosamente',
       type: [FormattedMatchingDto]
     })
-    async getMatchingResults(@Param('startDate') startDate: string, @Param('endDate') endDate: string, @Param('provider') provider: string): Promise<FormattedMatchingDto[]> {
-      console.log({startDate, endDate, provider});
-      
+    async getMatchingResults(@Param('startDate') startDate: string, @Param('endDate') endDate: string, @Param('provider') provider: string, @Param('status') status: string): Promise<FormattedMatchingDto[]> {
       // Convertir los strings de fecha a objetos Date
       const startDateObj = new Date(startDate);
       const endDateObj = new Date(endDate);
       
+      console.log({startDateObj, endDateObj, provider, status});
       // Validar que las fechas sean válidas
       if (isNaN(startDateObj.getTime()) || isNaN(endDateObj.getTime())) {
         throw new Error('Formato de fecha inválido');
       }
       
-      return this.matchingService.getMatchingResults(startDateObj, endDateObj, provider);
-    }
-
-    @Post('save-not-matching')
-    @UseGuards(JwtAuthGuard, JwtPermissionsGuard)
-    @RequirePermission('matching', PermissionAction.CREATE)
-    @ApiOperation({ summary: 'Guardar los proveedores sin match' })
-    @ApiResponse({ 
-      status: 201, 
-      description: 'Proveedores sin match guardados exitosamente'
-    })
-    async saveNotMatchingResults(@Body() notMatchingProviders: any[]): Promise<any> {
-        return this.matchingService.saveNotMatchingResults(notMatchingProviders);
+      return this.matchingService.getMatchingResults(startDateObj, endDateObj, provider, status);
     }
 
 
-    @Get('get-not-matching/:date')
+    @Post('payroll-matching')
+    @UsePipes(new ValidationPipe({ transform: true, whitelist: false, forbidNonWhitelisted: false }))
     @UseGuards(JwtAuthGuard, JwtPermissionsGuard)
     @RequirePermission('matching', PermissionAction.READ)
-    @ApiOperation({ summary: 'Obtener los proveedores sin match' })
+    @ApiOperation({ summary: 'Obtener los resultados del matching de la nómina' })
     @ApiResponse({ 
       status: 200, 
-      description: 'Proveedores sin match obtenidos exitosamente'
-    })
-    async getNotMatchingResults(@Param('date') date: string): Promise<any> {
-        console.log({date});
-        
-        // Convertir el string de fecha a objeto Date
-        const dateObj = new Date(date);
-        
-        // Validar que la fecha sea válida
-        if (isNaN(dateObj.getTime())) {
-          throw new Error('Formato de fecha inválido');
-        }
-        
-        return this.matchingService.getNotMatchingResults(dateObj);
-    }
-
-    @Delete('delete-not-matching/:_id')
-    @UseGuards(JwtAuthGuard, JwtPermissionsGuard)
-    @RequirePermission('matching', PermissionAction.DELETE)
-    @ApiOperation({ summary: 'Eliminar los proveedores sin match' })
-    @ApiResponse({ 
-      status: 200, 
-      description: 'Proveedores sin match eliminados exitosamente'
-    })
-    async deleteNotMatchingResults(@Param('_id') _id: string): Promise<any> {
-        return this.matchingService.deleteNotMatchingResults(_id);
+      description: 'Resultados del matching de la nómina obtenidos exitosamente' })
+    async getPayrollMatching(@Body() payload: PayrollMatchingDto): Promise<any> {
+      console.log('payroll-matching payload:', typeof payload, Array.isArray((payload as any)?.data));
+      console.log({payload});
+      return payload.provider == 'fiserv' ? this.matchingService.processFiservPayrollMatching(payload.data) : this.matchingService.getPayrollMatching(payload.provider, payload.data) ;
     }
 }
 

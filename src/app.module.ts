@@ -11,6 +11,7 @@ import { PermissionsModule } from './permissions/permissions.module';
 import { RolesModule } from './roles/roles.module';
 import { MatchingModule } from './matching/matching.module';
 import { NotMatchingModule } from './not-matching/not-matching.module';
+import { ProviderModule } from './provider/provider.module';
 
 @Module({
   imports: [
@@ -25,7 +26,8 @@ import { NotMatchingModule } from './not-matching/not-matching.module';
     PermissionsModule,
     RolesModule,
     MatchingModule,
-    NotMatchingModule
+    NotMatchingModule,
+    ProviderModule
   ],
   providers: [
     {

@@ -12,7 +12,8 @@ export enum MatchStatus {
   PENDING = 'pending',
   APPROVED = 'approved',
   REJECTED = 'rejected',
-  MANUAL = 'manual'
+  MANUAL = 'manual',
+  SETTLED = 'settled'
 }
 
 @Schema({ timestamps: true })
@@ -57,7 +58,8 @@ export class Matching extends Document {
 
   @Prop({ 
     type: String,
-    required: true
+    required: false,
+    default: null
   })
   sucursal: string|null;
 
@@ -75,6 +77,18 @@ export class Matching extends Document {
     default: MatchLevel.RED
   })
   matchLevel: MatchLevel;
+
+  @Prop({ type: Number, required: false, default: 0 })
+  estimated_net: number;
+
+  @Prop({ type: Date, required: false, default: null })
+  estimated_payrollDate: Date;
+
+  @Prop({ type: Number, required: false, default: 0 })
+  amount_net: number;
+
+  @Prop({ type: Date, required: false, default: null })
+  payrollDate: Date;
 }
 
 export const MatchingSchema = SchemaFactory.createForClass(Matching);

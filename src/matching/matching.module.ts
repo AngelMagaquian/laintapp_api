@@ -3,14 +3,13 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { MatchingController } from './matching.controller';
 import { MatchingService } from './matching.service';
 import { Matching, MatchingSchema } from '../schemas/matching.schema';
-import { NotMatching, NotMatchingSchema } from '../schemas/notMatching.schema';
+// NotMatching schema removed from this module; handled in NotMatchingModule
 import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
     MongooseModule.forFeature([
-      { name: Matching.name, schema: MatchingSchema },
-      { name: NotMatching.name, schema: NotMatchingSchema }
+      { name: Matching.name, schema: MatchingSchema }
     ]),
     UsersModule
   ],

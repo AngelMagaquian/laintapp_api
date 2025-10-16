@@ -1,16 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model, ObjectId, Types } from 'mongoose';
 import { MatchLevel, MatchResult, MatchStatus } from './dto/matching-file';
 import { MatchingResponseDto, FormattedMatchingDto } from './dto/matching-response.dto';
 import { Matching } from '../schemas/matching.schema';
-import { NotMatching } from '../schemas/notMatching.schema';
+// import { NotMatching } from '../schemas/notMatching.schema';
 
 @Injectable()
 export class MatchingService {
     constructor(
-        @InjectModel(Matching.name) private matchingModel: Model<Matching>,
-        @InjectModel(NotMatching.name) private notMatchingModel: Model<NotMatching>
+        @InjectModel(Matching.name) private matchingModel: Model<Matching>
     ) { }
 
     async matchingProcess(xrpArray: any[], providerArray: any[]): Promise<MatchingResponseDto> {
@@ -44,6 +43,7 @@ export class MatchingService {
                 }else{
                     tipoIgual = this.compareStringValues(xrpItem, providerItem, 'card_type');
                 }
+                //sacar a futuro cuando se corrijan el tpv de mercado pago
                 if (providerItem.provider !== 'mercado_pago') {
                     tpv = this.compareStringValues(xrpItem,providerItem, 'tpv');
                 }
@@ -104,7 +104,7 @@ export class MatchingService {
         };
     }
 
-    async getMatchingResults(startDate: Date | string, endDate: Date | string, provider: string): Promise<FormattedMatchingDto[]> {
+    async getMatchingResults(startDate: Date | string, endDate: Date | string, provider: string, status: string): Promise<FormattedMatchingDto[]> {
         try {
             // Convertir a Date si viene como string
             const startDateObj = typeof startDate === 'string' ? new Date(startDate) : startDate;
@@ -124,13 +124,16 @@ export class MatchingService {
             
             console.log({startOfRange, endOfRange, provider});
             
-            // Construir el filtro base con fechas
-            const filter: any = {
-                file_date: {
-                    $gte: startOfRange,
-                    $lte: endOfRange
-                }
+            // Construir el filtro base con fechas (si es settled usar payrollDate)
+            const filter: any = {};
+            const dateField = status === 'settled' ? 'payrollDate' : 'file_date';
+            filter[dateField] = {
+                $gte: startOfRange,
+                $lte: endOfRange
             };
+            if (status && status !== 'all') {
+                filter.status = status;
+            }
 
             // Si el proveedor no es "all", agregar el filtro de proveedor
             if (provider !== 'all') {
@@ -155,7 +158,11 @@ export class MatchingService {
                 reviewedBy: record.reviewedBy,
                 sucursal: record.sucursal,
                 matchedFields: record.matchedFields,
-                matchLevel: record.matchLevel
+                matchLevel: record.matchLevel,
+                estimated_net: record.estimated_net,
+                estimated_payrollDate: record.estimated_payrollDate,
+                payrollDate: record.payrollDate,
+                amount_net: record.amount_net,
             }));
             
             return formattedResults;
@@ -166,6 +173,33 @@ export class MatchingService {
     }
 
     private formatData(data: any): FormattedMatchingDto {
+        const estimatedNetFromOriginal = data.provider?.original_data?.neto;
+        const estimatedPayrollStr = data.provider?.original_data?.fecha_acreditacion || data.estimated_payrollDate;
+        const estimatedNetInput = data.estimated_net ?? data.provider?.amount_net;
+
+        const parseNumber = (val: any): number | undefined => {
+            if (val === null || val === undefined) return undefined;
+            const n = typeof val === 'string' ? Number(val.replace(',', '.')) : Number(val);
+            return Number.isNaN(n) ? undefined : n;
+        };
+
+        const parseDateDDMMYYYY = (str: string): Date | undefined => {
+            if (!str || typeof str !== 'string') return undefined;
+            const onlyDate = str.split(' ')[0];
+            const parts = onlyDate.includes('/') ? onlyDate.split('/') : [];
+            if (parts.length !== 3) {
+                const d = new Date(str);
+                return Number.isNaN(d.getTime()) ? undefined : d;
+            }
+            const [dd, mm, yyyy] = parts;
+            const iso = `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T00:00:00Z`;
+            const d = new Date(iso);
+            return Number.isNaN(d.getTime()) ? undefined : d;
+        };
+
+        const estimated_net = parseNumber(estimatedNetFromOriginal) ?? parseNumber(estimatedNetInput);
+        const estimated_payrollDate = parseDateDDMMYYYY(estimatedPayrollStr);
+
         const formatedData = {
             provider: data.provider_name,
             transaction_id: data.transaction_id || null,
@@ -178,9 +212,11 @@ export class MatchingService {
             tpv: data.provider?.tpv,
             status: data.status,
             reviewedBy: data.reviewedBy,
-            sucursal: data.xrp?.sucursal || data?.sucursal || null,
+            sucursal: (data.xrp?.sucursal || data?.sucursal)?.trim() || null,
             matchedFields: data.matchedFields || [],
             matchLevel: data.matchLevel,
+            estimated_net,
+            estimated_payrollDate,
         }
         return formatedData;
     }
@@ -205,7 +241,9 @@ export class MatchingService {
                     provider_name: result.provider_name,
                     transaction_id: result.provider?.transaction_id || result.xrp?.posnet?.toString() || 'unknown',
                     file_date: result.file_date ? new Date(result.file_date) : undefined,
-                    transaction_type: result.transaction_type
+                    transaction_type: result.transaction_type,
+                    estimated_net: result.estimated_net,
+                    estimated_payrollDate: result.estimated_payrollDate
                 });
 
                 return {
@@ -222,7 +260,9 @@ export class MatchingService {
                     reviewedBy: result.reviewedBy ? new Types.ObjectId(result.reviewedBy) : undefined,
                     sucursal: formattedData.sucursal,
                     matchedFields: formattedData.matchedFields,
-                    matchLevel: formattedData.matchLevel
+                    matchLevel: formattedData.matchLevel,
+                    estimated_net: formattedData.estimated_net,
+                    estimated_payrollDate: formattedData.estimated_payrollDate
                 };
             });
 
@@ -235,17 +275,10 @@ export class MatchingService {
         }
     }
 
-    async saveNotMatchingResults(notMatchingProviders: any[]): Promise<any> {
-        try {
-            const transformedResults = notMatchingProviders.map(provider => ({
-                ...provider,
-                original_data: provider.original_data,
-                provider_name: provider.provider_name,
-                file_date: provider.file_date ? new Date(provider.file_date) : undefined,
-                transaction_type: provider.transaction_type || 'unknown'
-            }));
 
-            const res = await this.notMatchingModel.insertMany(transformedResults);
+    private async findPayrollByIdAndProvider(provider: string, transaction_id: string): Promise<any> {
+        try {
+            const res = await this.matchingModel.find({ provider: provider, transaction_id: transaction_id.trim(), status: MatchStatus.APPROVED });
             return res;
         } catch (error) {
             console.log({ error });
@@ -253,43 +286,265 @@ export class MatchingService {
         }
     }
 
-    async getNotMatchingResults(date: Date | string): Promise<any> {
+    async processFiservPayrollMatching(data: any): Promise<any> {
         try {
-            // Convertir a Date si viene como string
-            const dateObj = typeof date === 'string' ? new Date(date) : date;
-            
-            // Crear las fechas en formato ISO string usando UTC para evitar problemas de timezone
-            const year = dateObj.getUTCFullYear();
-            const month = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
-            const day = String(dateObj.getUTCDate()).padStart(2, '0');
-            
-            const startOfDay = `${year}-${month}-${day}T00:00:00Z`;
-            const endOfDay = `${year}-${month}-${day}T23:59:59Z`;
-            
-            console.log({startOfDay, endOfDay});
-            
-            const res = await this.notMatchingModel.find({
-                file_date: {
-                    $gte: startOfDay,
-                    $lte: endOfDay
+            const finded: any[] = [];
+            const notFinded: any[] = [];
+
+            for (const item of data) {
+                let payrollDate = item.payroll_date;
+                let amount_net = item.total_net;
+                let type = item.type;
+                if (type === 'Visa Crédito') {
+                    type = 'VISA';
+                }else if(type === 'Mastercard Crédito'){
+                    type = 'MASTERCARD';
+                }else if(type === 'Mastercard Debit'){
+                    type = 'MASTERCARD';
+                }else if(type === 'Visa Débito'){
+                    type = 'VISA DEBITO';
                 }
-            }).populate('reviewedBy', 'name lastname _id');
 
-            return res;
+                for (const subItem of item.pays) {
+                    console.log(payrollDate, amount_net, type);
+                    
+                    // Buscar registros de matching con status approved y provider fiserv
+                    const matchingQuery = await this.findFiservApprovedMatching({
+                        card_type: type,
+                        tpv: item.tpv,
+                        lote: item.lote,
+                        cupon: item.cupon,
+                        file_date: item.file_date
+                    });
+
+                    console.log('Matching encontrados:', matchingQuery);
+                    
+                    if (matchingQuery && matchingQuery.length > 0) {
+                        // Si se encuentra coincidencia, actualizar el registro
+                        const updatedRecord = await this.processFiservPayrollMatchingUpdate(
+                            matchingQuery[0]._id, 
+                            payrollDate, 
+                            amount_net
+                        );
+                        console.log('Registro actualizado:', updatedRecord);
+                        finded.push(updatedRecord);
+                    } else {
+                        // Si no se encuentra coincidencia, agregar a notFinded
+                        notFinded.push({
+                            ...subItem,
+                            card_type: type,
+                            tpv: item.tpv,
+                            lote: item.lote,
+                            cupon: item.cupon,
+                            file_date: item.file_date,
+                            payroll_date: payrollDate,
+                            total_net: amount_net
+                        });
+                    }
+                }
+            }
+
+            return { finded, notFinded };
         } catch (error) {
             console.log({ error });
             throw error;
         }
     }
 
-    async deleteNotMatchingResults(_id: string): Promise<any> {
+    private async findFiservApprovedMatching(filters: {
+        card_type: string;
+        tpv: string;
+        lote: string;
+        cupon: string;
+        file_date: string;
+    }): Promise<any[]> {
         try {
-            const res = await this.notMatchingModel.deleteOne({_id: new Types.ObjectId(_id)});
-            return res;
+            // Convertir la fecha del formato '2025-08-05' a Date para comparar con MongoDB
+            const fileDate = new Date(filters.file_date + 'T00:00:00.000Z');
+            
+            const query = {
+                status: MatchStatus.APPROVED,
+                provider: 'fiserv',
+                card_type: filters.card_type,
+                tpv: filters.tpv,
+                lote: filters.lote,
+                cupon: filters.cupon,
+                file_date: fileDate
+            };
+
+            console.log('Query de búsqueda:', query);
+            
+            const results = await this.matchingModel.find(query);
+            return results;
         } catch (error) {
             console.log({ error });
             throw error;
         }
     }
+
+    private async processFiservPayrollMatchingUpdate(_id: ObjectId, payrollDate: Date, amount_net: number): Promise<any> {
+        try {
+            const updated = await this.matchingModel.findByIdAndUpdate(
+                _id,
+                { 
+                    $set: { 
+                        payrollDate: new Date(payrollDate), 
+                        amount_net: Number(amount_net), 
+                        status: MatchStatus.SETTLED 
+                    } 
+                },
+                { new: true }
+            );
+            return updated;
+        } catch (error) {
+            console.log({ error });
+            throw error;
+        }
+    }
+    private async processPayrollMatching(_id: ObjectId, payrollDate: Date, amount_net: number): Promise<any> {
+        try {
+            const updated = await this.matchingModel.findByIdAndUpdate(
+                _id,
+                { 
+                    $set: { 
+                        payrollDate: new Date(payrollDate), 
+                        amount_net: Number(amount_net), 
+                        status: MatchStatus.SETTLED 
+                    } 
+                },
+                { new: true }
+            );
+            return updated;
+        } catch (error) {
+            console.log({ error });
+            throw error;
+        }
+    }
+    async processNaranjaPayrollMatching(data: any[]): Promise<any> {
+        try {
+            const finded: any[] = [];
+            const notFinded: any[] = [];
+
+            for (const item of data) {
+                console.log('Procesando item Naranja:', item);
+                
+                // Buscar registros de matching con status approved y provider naranja
+                const matchingQuery = await this.findNaranjaApprovedMatching({
+                    file_date: item.file_date,
+                    tpv: item.tpv,
+                    lote: item.lote,
+                    cupon: item.cupon
+                });
+
+                console.log('Matching encontrados:', matchingQuery);
+                
+                if (matchingQuery && matchingQuery.length > 0) {
+                    // Si se encuentra coincidencia, actualizar el registro
+                    const updatedRecord = await this.processNaranjaPayrollMatchingUpdate(
+                        matchingQuery[0]._id, 
+                        item.payroll_date, 
+                        item.amount_net
+                    );
+                    console.log('Registro actualizado:', updatedRecord);
+                    finded.push(updatedRecord);
+                } else {
+                    // Si no se encuentra coincidencia, agregar a notFinded
+                    notFinded.push(item);
+                }
+            }
+
+            return { finded, notFinded };
+        } catch (error) {
+            console.log({ error });
+            throw error;
+        }
+    }
+
+    private async findNaranjaApprovedMatching(filters: {
+        file_date: string;
+        tpv: string;
+        lote: string;
+        cupon: string;
+    }): Promise<any[]> {
+        try {
+            // Convertir la fecha del formato '2025-08-31' a Date para comparar con MongoDB
+            const fileDate = new Date(filters.file_date + 'T00:00:00.000Z');
+            
+            const query = {
+                status: MatchStatus.APPROVED,
+                provider: 'naranja',
+                file_date: fileDate,
+                tpv: filters.tpv,
+                lote: filters.lote,
+                cupon: filters.cupon
+            };
+
+            console.log('Query de búsqueda Naranja:', query);
+            
+            const results = await this.matchingModel.find(query);
+            return results;
+        } catch (error) {
+            console.log({ error });
+            throw error;
+        }
+    }
+
+    private async processNaranjaPayrollMatchingUpdate(_id: ObjectId, payrollDate: Date, amount_net: number): Promise<any> {
+        try {
+            const updated = await this.matchingModel.findByIdAndUpdate(
+                _id,
+                { 
+                    $set: { 
+                        payrollDate: new Date(payrollDate), 
+                        amount_net: Number(amount_net), 
+                        status: MatchStatus.SETTLED 
+                    } 
+                },
+                { new: true }
+            );
+            return updated;
+        } catch (error) {
+            console.log({ error });
+            throw error;
+        }
+    }
+
+    async getPayrollMatching(provider: string, data: any[]): Promise<any> {
+        try {
+            if (!provider || !Array.isArray(data)) {
+                throw new BadRequestException('Payload inválido: provider o data');
+            }
+            const finded: any[] = [];
+            const notFinded: any[] = [];
+
+            for (const item of data) {
+                const operacion = item.transaction_id;
+                let docs: any[] = [];
+                if (!operacion || typeof operacion !== 'string') {
+                    notFinded.push(item);
+                    continue;
+                }
+                if(provider === 'nave' || provider === 'mercado_pago'){
+                    docs = await this.findPayrollByIdAndProvider(provider, operacion);
+                }
+                if (docs && docs.length > 0) {
+                    
+                    const newData = await this.processPayrollMatching(docs[0]._id, item.payroll_date, item.amount_net);
+                    console.log(newData);
+                    finded.push(newData);
+                } else {
+                    notFinded.push(item);
+                }
+            }
+
+            return { finded, notFinded };
+        } catch (error) {
+            console.log({ error });
+            throw error;
+        }
+    }
+
+
+    // Métodos de NotMatching movidos a NotMatchingService
 }
 

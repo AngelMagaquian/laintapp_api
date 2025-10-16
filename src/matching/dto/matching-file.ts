@@ -13,7 +13,8 @@ export enum MatchStatus {
   PENDING = 'pending',
   APPROVED = 'approved',
   REJECTED = 'rejected',
-  MANUAL = 'manual'
+  MANUAL = 'manual',
+  SETTLED = 'settled'
 }
 
 export class MatchResult {
