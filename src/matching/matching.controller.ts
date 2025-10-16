@@ -105,7 +105,13 @@ export class MatchingController {
     async getPayrollMatching(@Body() payload: PayrollMatchingDto): Promise<any> {
       console.log('payroll-matching payload:', typeof payload, Array.isArray((payload as any)?.data));
       console.log({payload});
-      return payload.provider == 'fiserv' ? this.matchingService.processFiservPayrollMatching(payload.data) : this.matchingService.getPayrollMatching(payload.provider, payload.data) ;
+      if(payload.provider == 'fiserv'){
+        return this.matchingService.processFiservPayrollMatching(payload.data);
+      }else if(payload.provider == 'naranja'){
+        return this.matchingService.processNaranjaPayrollMatching(payload.data);
+      }else{
+        return this.matchingService.getPayrollMatching(payload.provider, payload.data);
+      }
     }
 }
 
