@@ -21,7 +21,7 @@ export class MatchingService {
         const matchingResults: MatchResult[] = [];
         const notMatchingXrpItems: any[] = [];
 
-        const modo_types = ['PERSONAL_PAY', 'MODO', 'UALA', 'NARANJA', 'MERCADO PAGO']
+        const modo_types = ['PERSONAL_PAY', 'MODO', 'UALA', 'NARANJA', 'MERCADO PAGO', 'GENERAL']
         const res = xrpArray.map((xrpItem, index) => {
             let bestMatch: any = null;
             let bestLevel: MatchResult['matchLevel'] = MatchLevel.RED;
@@ -38,7 +38,10 @@ export class MatchingService {
 
                 if(providerItem.proveedor === 'fiserv' && xrpItem.card_type === 'MODO'){
                     tipoIgual = modo_types.includes(xrpItem.card_type.toUpperCase()) ? true : false;
-                }else if(providerItem.proveedor === 'nave' || providerItem.proveedor === 'naranja'){
+                }else if(providerItem.proveedor === 'fiserv'){
+                    tipoIgual = true
+                }
+                else if(providerItem.proveedor === 'nave' || providerItem.proveedor === 'naranja'){
                     tipoIgual = true
                 }else{
                     tipoIgual = this.compareStringValues(xrpItem, providerItem, 'card_type');
@@ -311,10 +314,10 @@ export class MatchingService {
                     // Buscar registros de matching con status approved y provider fiserv
                     const matchingQuery = await this.findFiservApprovedMatching({
                         card_type: type,
-                        tpv: item.tpv,
-                        lote: item.lote,
-                        cupon: item.cupon,
-                        file_date: item.file_date
+                        tpv: subItem.tpv,
+                        lote: subItem.lote,
+                        cupon: subItem.cupon,
+                        file_date: subItem.file_date || item.file_date
                     });
 
                     console.log('Matching encontrados:', matchingQuery);
@@ -333,10 +336,10 @@ export class MatchingService {
                         notFinded.push({
                             ...subItem,
                             card_type: type,
-                            tpv: item.tpv,
-                            lote: item.lote,
-                            cupon: item.cupon,
-                            file_date: item.file_date,
+                            tpv: subItem.tpv,
+                            lote: subItem.lote,
+                            cupon: subItem.cupon,
+                            file_date: subItem.file_date || item.file_date,
                             payroll_date: payrollDate,
                             total_net: amount_net
                         });
@@ -356,21 +359,28 @@ export class MatchingService {
         tpv: string;
         lote: string;
         cupon: string;
-        file_date: string;
+        file_date: string | null | undefined;
     }): Promise<any[]> {
         try {
-            // Convertir la fecha del formato '2025-08-05' a Date para comparar con MongoDB
-            const fileDate = new Date(filters.file_date + 'T00:00:00.000Z');
-            
-            const query = {
+            const query: any = {
                 status: MatchStatus.APPROVED,
                 provider: 'fiserv',
                 card_type: filters.card_type,
                 tpv: filters.tpv,
                 lote: filters.lote,
-                cupon: filters.cupon,
-                file_date: fileDate
+                cupon: filters.cupon
             };
+
+            // Solo agregar file_date si no es null o undefined
+            if (filters.file_date) {
+                // Convertir la fecha del formato '2025-08-05' a Date para comparar con MongoDB
+                const fileDate = new Date(filters.file_date + 'T00:00:00.000Z');
+                
+                // Validar que la fecha sea válida antes de agregarla a la query
+                if (!isNaN(fileDate.getTime())) {
+                    query.file_date = fileDate;
+                }
+            }
 
             console.log('Query de búsqueda:', query);
             
@@ -524,7 +534,7 @@ export class MatchingService {
                     notFinded.push(item);
                     continue;
                 }
-                if(provider === 'nave' || provider === 'mercado_pago'){
+                if(provider.toLowerCase() === 'nave' || provider.toLowerCase() === 'mercado_pago' || provider.toLowerCase() === 'modo' || provider.toLowerCase() === 'cabal' || provider.toLowerCase() === 'amex'){
                     docs = await this.findPayrollByIdAndProvider(provider, operacion);
                 }
                 if (docs && docs.length > 0) {
