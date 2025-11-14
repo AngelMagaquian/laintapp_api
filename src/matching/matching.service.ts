@@ -290,6 +290,8 @@ export class MatchingService {
     }
 
     async processFiservPayrollMatching(data: any): Promise<any> {
+
+        console.log({ data });
         try {
             const finded: any[] = [];
             const notFinded: any[] = [];
