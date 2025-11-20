@@ -305,21 +305,20 @@ export class MatchingService {
                 }else if(type === 'Mastercard Crédito'){
                     type = 'MASTERCARD';
                 }else if(type === 'Mastercard Debit'){
-                    type = 'MASTERCARD';
+                    type = 'Master Debit';
                 }else if(type === 'Visa Débito'){
                     type = 'VISA DEBITO';
                 }
 
                 for (const subItem of item.pays) {
-                    console.log(payrollDate, amount_net, type);
-                    
-                    // Buscar registros de matching con status approved y provider fiserv
+                
                     const matchingQuery = await this.findFiservApprovedMatching({
                         card_type: type,
                         tpv: subItem.tpv,
                         lote: subItem.lote,
                         cupon: subItem.cupon,
-                        file_date: subItem.file_date || item.file_date
+                        file_date: subItem.file_date,
+                        amount: subItem.amount
                     });
 
                     console.log('Matching encontrados:', matchingQuery);
@@ -329,7 +328,7 @@ export class MatchingService {
                         const updatedRecord = await this.processFiservPayrollMatchingUpdate(
                             matchingQuery[0]._id, 
                             payrollDate, 
-                            amount_net
+                            matchingQuery[0].estimated_net
                         );
                         console.log('Registro actualizado:', updatedRecord);
                         finded.push(updatedRecord);
@@ -341,9 +340,9 @@ export class MatchingService {
                             tpv: subItem.tpv,
                             lote: subItem.lote,
                             cupon: subItem.cupon,
-                            file_date: subItem.file_date || item.file_date,
+                            file_date: subItem.file_date,
                             payroll_date: payrollDate,
-                            total_net: amount_net
+                            total_net: subItem.amount
                         });
                     }
                 }
@@ -357,6 +356,7 @@ export class MatchingService {
     }
 
     private async findFiservApprovedMatching(filters: {
+        amount: number;
         card_type: string;
         tpv: string;
         lote: string;
@@ -368,32 +368,55 @@ export class MatchingService {
                 status: MatchStatus.APPROVED,
                 provider: 'fiserv',
                 card_type: filters.card_type,
-                tpv: filters.tpv,
                 lote: filters.lote,
-                cupon: filters.cupon
+                cupon: filters.cupon,
+                amount: filters.amount
             };
 
-            // Solo agregar file_date si no es null o undefined
+           /* 
             if (filters.file_date) {
-                // Convertir la fecha del formato '2025-08-05' a Date para comparar con MongoDB
-                const fileDate = new Date(filters.file_date + 'T00:00:00.000Z');
+                const fileDateObj = typeof filters.file_date === 'string' ? new Date(filters.file_date) : filters.file_date;
                 
-                // Validar que la fecha sea válida antes de agregarla a la query
-                if (!isNaN(fileDate.getTime())) {
-                    query.file_date = fileDate;
+             
+                if (!isNaN(fileDateObj.getTime())) {
+               
+                    const year = fileDateObj.getUTCFullYear();
+                    const month = fileDateObj.getUTCMonth();
+                    const day = fileDateObj.getUTCDate();
+                    
+                
+                    const startOfDay = new Date(Date.UTC(year, month, day, 0, 0, 0, 0));
+                    const endOfDay = new Date(Date.UTC(year, month, day, 23, 59, 59, 999));
+                    
+                    query.file_date = {
+                        $gte: startOfDay,
+                        $lte: endOfDay
+                    };
                 }
+            } */
+    
+           
+    
+            console.log('Fiserv query completa:', JSON.stringify(query, null, 2));
+            
+            // Log adicional para debug: buscar sin file_date para ver si hay registros que coincidan con otros campos
+            const queryWithoutDate = { ...query };
+            delete queryWithoutDate.file_date;
+            const resultsWithoutDate = await this.matchingModel.find(queryWithoutDate).limit(5);
+            console.log('Fiserv resultados SIN file_date (primeros 5):', resultsWithoutDate.length);
+            if (resultsWithoutDate.length > 0) {
+                console.log('Ejemplo de file_date en BD:', resultsWithoutDate[0].file_date);
+                console.log('Tipo de file_date en BD:', typeof resultsWithoutDate[0].file_date);
             }
-
-            console.log('Query de búsqueda:', query);
             
             const results = await this.matchingModel.find(query);
+            console.log('Fiserv resultados encontrados CON file_date:', results.length);
             return results;
         } catch (error) {
             console.log({ error });
             throw error;
         }
     }
-
     private async processFiservPayrollMatchingUpdate(_id: ObjectId, payrollDate: Date, amount_net: number): Promise<any> {
         try {
             const updated = await this.matchingModel.findByIdAndUpdate(
