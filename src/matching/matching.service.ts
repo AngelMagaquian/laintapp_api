@@ -457,36 +457,112 @@ export class MatchingService {
             throw error;
         }
     }
+    // 1. HELPER: Parseo de fecha específico para formato Naranja (DDMMAAAA o DD/MM/AAAA)
+    private parseNaranjaDate(dateStr: string): Date {
+        if (!dateStr) return new Date();
+        const str = dateStr.toString().trim();
+
+        // Si ya viene formateada (ISO), la devolvemos
+        if (str.includes('-') && str.includes('T')) {
+            return new Date(str);
+        }
+
+        // Formato con barras: 19/10/2025
+        if (str.includes('/')) {
+            const parts = str.split('/');
+            if (parts.length === 3) {
+                const day = parts[0].padStart(2, '0');
+                const month = parts[1].padStart(2, '0');
+                const year = parts[2];
+                return new Date(`${year}-${month}-${day}T00:00:00.000Z`);
+            }
+        }
+
+        // Formato plano: 26092025 (8 dígitos) o 5102025 (7 dígitos - falta 0 inicial)
+        let cleanStr = str;
+        if (cleanStr.length === 7) {
+            cleanStr = '0' + cleanStr;
+        }
+
+        if (cleanStr.length === 8 && !isNaN(Number(cleanStr))) {
+            const day = cleanStr.substring(0, 2);
+            const month = cleanStr.substring(2, 4);
+            const year = cleanStr.substring(4, 8);
+            return new Date(`${year}-${month}-${day}T00:00:00.000Z`);
+        }
+
+        return new Date(); // Fallback
+    }
+
+    // 2. HELPER: Parseo de montos (coma a punto)
+    private parseAmount(amountStr: any): number {
+        if (!amountStr) return 0;
+        if (typeof amountStr === 'number') return amountStr;
+        return parseFloat(amountStr.toString().replace(',', '.'));
+    }
+
     async processNaranjaPayrollMatching(data: any[]): Promise<any> {
         try {
             const finded: any[] = [];
             const notFinded: any[] = [];
 
             for (const item of data) {
-                console.log('Procesando item Naranja:', item);
+                try {
+                    console.log('Procesando item Naranja:', item);
 
-                // Buscar registros de matching con status approved y provider naranja
-                const matchingQuery = await this.findNaranjaApprovedMatching({
-                    file_date: item.file_date,
-                    tpv: item.tpv,
-                    lote: item.lote,
-                    cupon: item.cupon
-                });
+                    // FILTRO: Ignorar filas que no son ventas (Cabeceras, Impuestos, Totales)
+                    // Si no tiene tarjeta ni cupón, no es una transacción individual macheable.
+                    if (!item['Numero de tarjeta'] && !item['Cupon (Controlar)'] && !item['Nro. de Cupón']) {
+                        continue;
+                    }
 
-                console.log('Matching encontrados:', matchingQuery);
+                    const rawLote = item.lote || item.Lote || item['Nro. de Lote'];
+                    const rawCupon = item.cupon || item['Cupon (Controlar)'] || item['Nro. de Cupón'];
+                    const rawBruto = item.Bruto || item['Importe Bruto'] || item.amount;
 
-                if (matchingQuery && matchingQuery.length > 0) {
-                    // Si se encuentra coincidencia, actualizar el registro
-                    const updatedRecord = await this.processNaranjaPayrollMatchingUpdate(
-                        matchingQuery[0]._id,
-                        item.payroll_date,
-                        item.amount_net
-                    );
-                    console.log('Registro actualizado:', updatedRecord);
-                    finded.push(updatedRecord);
-                } else {
-                    // Si no se encuentra coincidencia, agregar a notFinded
-                    notFinded.push(item);
+                    if (!rawBruto || !rawLote || !rawCupon) {
+                        console.warn('Item Naranja falta datos clave (amount, lote, cupon) - Posible registro no transaccional:', item);
+                        notFinded.push({ ...item, error: 'Faltan datos clave o no es una transacción' });
+                        continue;
+                    }
+
+                    const amountBruto = this.parseAmount(rawBruto);
+
+                    const arancel = this.parseAmount(item['Calculo arancel'] || item['Arancel']);
+                    const interes = this.parseAmount(item['Calculo interes'] || item['Interes']);
+                    const amountNet = amountBruto - arancel - interes;
+
+
+                    const rawDate = item.file_date || item['Fecha de Venta'];
+                    const payrollDate = this.parseNaranjaDate(item['Fecha de cobro'] || item.payroll_date);
+
+                    // Buscar match
+                    const matchingQuery = await this.findNaranjaApprovedMatching({
+                        file_date: rawDate,
+                        tpv: item.tpv || item.Terminal || item['Nro. de Terminal'],
+                        lote: rawLote,
+                        cupon: rawCupon,
+                        amount: amountBruto
+                    });
+
+                    console.log('Matching encontrados:', matchingQuery);
+
+                    if (matchingQuery && matchingQuery.length > 0) {
+                        // Si se encuentra coincidencia, actualizar el registro
+                        const updatedRecord = await this.processNaranjaPayrollMatchingUpdate(
+                            matchingQuery[0]._id,
+                            payrollDate,
+                            amountNet // Pasamos el neto calculado
+                        );
+                        console.log('Registro actualizado:', updatedRecord);
+                        finded.push(updatedRecord);
+                    } else {
+                        // Si no se encuentra coincidencia, agregar a notFinded
+                        notFinded.push(item);
+                    }
+                } catch (innerError) {
+                    console.error('Error procesando item individual Naranja:', innerError, item);
+                    notFinded.push({ ...item, error: innerError.message });
                 }
             }
 
@@ -502,24 +578,84 @@ export class MatchingService {
         tpv: string;
         lote: string;
         cupon: string;
+        amount: number;
     }): Promise<any[]> {
         try {
-            // Convertir la fecha del formato '2025-08-31' a Date para comparar con MongoDB
-            const fileDate = new Date(filters.file_date + 'T00:00:00.000Z');
+            console.log('findNaranjaApprovedMatching filters:', filters);
 
-            const query = {
+            // Corrección Crítica: Parseo de fecha usando el helper
+            const fileDate = this.parseNaranjaDate(filters.file_date);
+
+            // Rangos de fecha (Inicio y Fin del día)
+            const startOfDay = new Date(fileDate);
+            if (!isNaN(startOfDay.getTime())) startOfDay.setUTCHours(0, 0, 0, 0);
+
+            const endOfDay = new Date(fileDate);
+            if (!isNaN(endOfDay.getTime())) endOfDay.setUTCHours(23, 59, 59, 999);
+
+            // Limpieza de Lote y Cupón (Regex para ignorar ceros izquierda)
+            const cleanLote = filters.lote ? filters.lote.toString().trim().replace(/^0+/, '') : '';
+            const cleanCupon = filters.cupon ? filters.cupon.toString().trim().replace(/^0+/, '') : '';
+
+            const loteRegex = new RegExp(`^0*${cleanLote}$`);
+            const cuponRegex = new RegExp(`^0*${cleanCupon}$`);
+
+            // Intento 1: Búsqueda Estricta (Fecha + Monto + Lote + Cupón)
+            const queryStrict: any = {
+                status: MatchStatus.APPROVED, // Solo APPROVED
+                provider: 'naranja',
+                amount: filters.amount,
+                lote: { $regex: loteRegex },
+                cupon: { $regex: cuponRegex }
+            };
+            if (!isNaN(startOfDay.getTime())) {
+                queryStrict.file_date = { $gte: startOfDay, $lte: endOfDay };
+            }
+
+            console.log('INTENTO 1 (Estricto):', JSON.stringify(queryStrict, null, 2));
+            let results = await this.matchingModel.find(queryStrict);
+            if (results.length > 0) return results;
+
+            // Intento 2: Sin Fecha (A veces la fecha de venta difiere por horas/timezone)
+            console.log('Intento 1 falló. Probando INTENTO 2 (Ignorar Fecha)...');
+            const queryNoDate = {
                 status: MatchStatus.APPROVED,
                 provider: 'naranja',
-                file_date: fileDate,
-                tpv: filters.tpv,
-                lote: filters.lote,
-                cupon: filters.cupon
+                amount: filters.amount,
+                lote: { $regex: loteRegex },
+                cupon: { $regex: cuponRegex }
             };
+            results = await this.matchingModel.find(queryNoDate);
+            if (results.length > 0) {
+                console.log(`¡Match encontrado en Intento 2! (${results.length} resultados)`);
+                return results;
+            }
 
-            console.log('Query de búsqueda Naranja:', query);
+            // Intento 3: Sin Monto (A veces hay diferencias de centavos)
+            if (!isNaN(startOfDay.getTime())) {
+                console.log('Intento 2 falló. Probando INTENTO 3 (Ignorar Monto)...');
+                const queryNoAmount = {
+                    status: MatchStatus.APPROVED,
+                    provider: 'naranja',
+                    file_date: { $gte: startOfDay, $lte: endOfDay },
+                    lote: { $regex: loteRegex },
+                    cupon: { $regex: cuponRegex }
+                };
+                results = await this.matchingModel.find(queryNoAmount);
+                if (results.length > 0) {
+                    console.log(`¡Match encontrado en Intento 3! (${results.length} resultados)`);
+                    return results;
+                }
+            }
 
-            const results = await this.matchingModel.find(query);
-            return results;
+            console.log('No se encontraron coincidencias en ningún intento.');
+
+            // CHECK: ¿Ya está liquidada?
+            cupon: { $regex: cuponRegex }
+
+
+            return [];
+
         } catch (error) {
             console.log({ error });
             throw error;
