@@ -70,7 +70,19 @@ export class MatchingController {
     return this.matchingService.saveMatchingResults(matchingResults);
   }
 
-  @Get('get-matching/:startDate/:endDate/:provider/:status')
+  @Post('manual-settle')
+  @UseGuards(JwtAuthGuard, JwtPermissionsGuard)
+  @RequirePermission('matching', PermissionAction.UPDATE)
+  @ApiOperation({ summary: 'Liquidar manualmente un registro' })
+  @ApiResponse({
+    status: 200,
+    description: 'Registro liquidado exitosamente'
+  })
+  async manualSettleMatching(@Body() body: { recordId: string; settlement_date: string; net_amount: number }): Promise<any> {
+    return this.matchingService.manualSettleMatching(body.recordId, body.settlement_date, body.net_amount);
+  }
+
+  @Get('get-matching/:startDate/:endDate/:provider/:status/:dateKey')
   @UseGuards(JwtAuthGuard, JwtPermissionsGuard)
   @RequirePermission('matching', PermissionAction.READ)
   @ApiOperation({ summary: 'Obtener los resultados del matching' })
@@ -79,18 +91,24 @@ export class MatchingController {
     description: 'Resultados del matching obtenidos exitosamente',
     type: [FormattedMatchingDto]
   })
-  async getMatchingResults(@Param('startDate') startDate: string, @Param('endDate') endDate: string, @Param('provider') provider: string, @Param('status') status: string): Promise<FormattedMatchingDto[]> {
+  async getMatchingResults(
+    @Param('startDate') startDate: string,
+    @Param('endDate') endDate: string,
+    @Param('provider') provider: string,
+    @Param('status') status: string,
+    @Param('dateKey') dateKey: string
+  ): Promise<FormattedMatchingDto[]> {
     // Convertir los strings de fecha a objetos Date
     const startDateObj = new Date(startDate);
     const endDateObj = new Date(endDate);
 
-    console.log({ startDateObj, endDateObj, provider, status });
+    console.log({ startDateObj, endDateObj, provider, status, dateKey });
     // Validar que las fechas sean válidas
     if (isNaN(startDateObj.getTime()) || isNaN(endDateObj.getTime())) {
       throw new Error('Formato de fecha inválido');
     }
 
-    return this.matchingService.getMatchingResults(startDateObj, endDateObj, provider, status);
+    return this.matchingService.getMatchingResults(startDateObj, endDateObj, provider, status, dateKey);
   }
 
 

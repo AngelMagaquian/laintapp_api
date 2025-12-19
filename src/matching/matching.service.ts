@@ -107,7 +107,7 @@ export class MatchingService {
         };
     }
 
-    async getMatchingResults(startDate: Date | string, endDate: Date | string, provider: string, status: string): Promise<FormattedMatchingDto[]> {
+    async getMatchingResults(startDate: Date | string, endDate: Date | string, provider: string, status: string, dateKey: string): Promise<FormattedMatchingDto[]> {
         try {
             // Convertir a Date si viene como string
             const startDateObj = typeof startDate === 'string' ? new Date(startDate) : startDate;
@@ -129,8 +129,8 @@ export class MatchingService {
 
             // Construir el filtro base con fechas (si es settled usar payrollDate)
             const filter: any = {};
-            const dateField = status === 'settled' ? 'payrollDate' : 'file_date';
-            filter[dateField] = {
+            // const dateField = status === 'settled' ? 'payrollDate' : 'file_date';
+            filter[dateKey] = {
                 $gte: startOfRange,
                 $lte: endOfRange
             };
@@ -148,6 +148,7 @@ export class MatchingService {
 
             // Los datos ya están en el formato correcto, solo necesitamos convertirlos
             const formattedResults = res.map(record => ({
+                _id: record._id,
                 provider: record.provider,
                 transaction_id: record.transaction_id,
                 transaction_type: record.transaction_type,
@@ -438,6 +439,21 @@ export class MatchingService {
             throw error;
         }
     }
+    async manualSettleMatching(recordId: string, settlementDate: string, netAmount: number): Promise<any> {
+        try {
+            const date = new Date(settlementDate);
+            // Ajustar a UTC si es necesario, o asumir que viene como YYYY-MM-DD y crear fecha local/UTC
+            // Para consistencia con el resto, creamos fecha UTC inicio del día
+            const parts = settlementDate.split('-');
+            const utcDate = new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 0, 0, 0));
+
+            return await this.processPayrollMatching(new Types.ObjectId(recordId) as any, utcDate, netAmount);
+        } catch (error) {
+            console.log({ error });
+            throw error;
+        }
+    }
+
     private async processPayrollMatching(_id: ObjectId, payrollDate: Date, amount_net: number): Promise<any> {
         try {
             const updated = await this.matchingModel.findByIdAndUpdate(
