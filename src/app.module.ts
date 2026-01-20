@@ -12,6 +12,7 @@ import { RolesModule } from './roles/roles.module';
 import { MatchingModule } from './matching/matching.module';
 import { NotMatchingModule } from './not-matching/not-matching.module';
 import { ProviderModule } from './provider/provider.module';
+import { PayConfigModule } from './pay-config/pay-config.module';
 
 @Module({
   imports: [
@@ -27,7 +28,9 @@ import { ProviderModule } from './provider/provider.module';
     RolesModule,
     MatchingModule,
     NotMatchingModule,
-    ProviderModule
+    NotMatchingModule,
+    ProviderModule,
+    PayConfigModule
   ],
   providers: [
     {
@@ -36,4 +39,4 @@ import { ProviderModule } from './provider/provider.module';
     },
   ],
 })
-export class AppModule {}
+export class AppModule { }
