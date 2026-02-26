@@ -45,7 +45,7 @@ export class Matching extends Document {
   @Prop({ type: String, required: false })
   tpv: string;
 
-  @Prop({ 
+  @Prop({
     required: true,
     enum: Object.values(MatchStatus),
     type: String,
@@ -56,21 +56,21 @@ export class Matching extends Document {
   @Prop({ type: Types.ObjectId, ref: 'User', required: false })
   reviewedBy?: Types.ObjectId;
 
-  @Prop({ 
+  @Prop({
     type: String,
     required: false,
     default: null
   })
-  sucursal: string|null;
+  sucursal: string | null;
 
-  @Prop({ 
+  @Prop({
     type: [String],
     required: true,
     default: []
   })
   matchedFields: string[];
 
-  @Prop({ 
+  @Prop({
     required: true,
     enum: Object.values(MatchLevel),
     type: String,

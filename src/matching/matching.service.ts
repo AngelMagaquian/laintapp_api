@@ -4,12 +4,14 @@ import { Model, ObjectId, Types } from 'mongoose';
 import { MatchLevel, MatchResult, MatchStatus } from './dto/matching-file';
 import { MatchingResponseDto, FormattedMatchingDto } from './dto/matching-response.dto';
 import { Matching } from '../schemas/matching.schema';
+import { TaxesDeductions } from '../schemas/taxes_deductions.schema';
 // import { NotMatching } from '../schemas/notMatching.schema';
 
 @Injectable()
 export class MatchingService {
     constructor(
-        @InjectModel(Matching.name) private matchingModel: Model<Matching>
+        @InjectModel(Matching.name) private matchingModel: Model<Matching>,
+        @InjectModel(TaxesDeductions.name) private taxesDeductionsModel: Model<TaxesDeductions>
     ) { }
 
     async matchingProcess(xrpArray: any[], providerArray: any[]): Promise<MatchingResponseDto> {
@@ -703,6 +705,8 @@ export class MatchingService {
             const finded: any[] = [];
             const notFinded: any[] = [];
 
+            const settledItems: any[] = [];
+
             for (const item of data) {
                 console.log('Procesando item MODO:', item);
 
@@ -725,11 +729,14 @@ export class MatchingService {
                     );
                     console.log('Registro actualizado:', updatedRecord);
                     finded.push(updatedRecord);
+                    settledItems.push(item);
                 } else {
                     // Si no se encuentra coincidencia, agregar a notFinded
                     notFinded.push(item);
                 }
             }
+
+            this.groupAndSumSettled(settledItems, 'MODO');
 
             return { finded, notFinded };
         } catch (error) {
@@ -793,6 +800,8 @@ export class MatchingService {
             const finded: any[] = [];
             const notFinded: any[] = [];
 
+            const settledItems: any[] = [];
+
             for (const item of data) {
                 const operacion = item.transaction_id;
                 let docs: any[] = [];
@@ -802,7 +811,7 @@ export class MatchingService {
                 }
 
                 if (provider.toLowerCase() === 'nave' || provider.toLowerCase() === 'mercado_pago' || provider.toLowerCase() === 'modo' || provider.toLowerCase() === 'cabal' || provider.toLowerCase() === 'amex') {
-                    console.log(provider)
+                    // console.log(provider)
                     docs = await this.findPayrollByIdAndProvider(provider, operacion);
                 }
                 if (docs && docs.length > 0) {
@@ -810,10 +819,15 @@ export class MatchingService {
                     const newData = await this.processPayrollMatching(docs[0]._id, item.payroll_date, item.amount_net);
                     console.log(newData);
                     finded.push(newData);
+                    // Agregar item original (con datos de impuestos) a la lista de liquidados para agrupar
+                    settledItems.push(item);
                 } else {
                     notFinded.push(item);
                 }
             }
+
+            // Llamar al agrupador al final
+            this.groupAndSumSettled(settledItems, provider);
 
             return { finded, notFinded };
         } catch (error) {
@@ -824,5 +838,65 @@ export class MatchingService {
 
 
     // Métodos de NotMatching movidos a NotMatchingService
+
+    private async groupAndSumSettled(settledItems: any[], providerName: string) {
+        try {
+            if (!settledItems || settledItems.length === 0) {
+                console.log(`No hay items liquidados para agrupar de ${providerName}.`);
+                return;
+            }
+
+            const groupedMap = new Map<string, any>();
+
+            for (const item of settledItems) {
+                // Clave de agrupamiento: Proveedor + Fecha (payroll_date)
+                // Usamos payroll_date como fecha de liquidación
+                const dateKey = item.payroll_date ? new Date(item.payroll_date).toISOString().split('T')[0] : 'unknown_date';
+                const key = `${providerName}|${dateKey}`;
+
+                if (!groupedMap.has(key)) {
+                    groupedMap.set(key, {
+                        provider: providerName,
+                        date: dateKey,
+                        costo_servicio: 0,
+                        iva: 0,
+                        iibb: 0,
+                        descuentos_financieros: 0,
+                        imp_credito_debito: 0,
+                        per_iva: 0,
+                        otros_imp: 0,
+                        otros_aran: 0,
+                        count: 0
+                    });
+                }
+
+                const group = groupedMap.get(key);
+                group.costo_servicio += Number(item.costo_servicio || 0);
+                group.iva += Number(item.iva || 0);
+                group.iibb += Number(item.iibb || 0);
+                group.descuentos_financieros += Number(item.descuentos_financieros || 0);
+                group.imp_credito_debito += Number(item.imp_credito_debito || 0);
+                group.per_iva += Number(item.per_iva || 0);
+                group.otros_imp += Number(item.otros_imp || 0);
+                group.otros_aran += Number(item.otros_aran || 0);
+                group.count += 1;
+            }
+
+            const groupedResults = Array.from(groupedMap.values());
+            console.log('--- Grouped Settled Results ---');
+            console.log(JSON.stringify(groupedResults, null, 2));
+            console.log('-------------------------------');
+
+            if (groupedResults.length > 0) {
+                await this.taxesDeductionsModel.insertMany(groupedResults);
+                console.log('Grouped results saved to TaxesDeductions collection.');
+            }
+
+            return groupedResults;
+
+        } catch (error) {
+            console.error('Error in groupAndSumSettled:', error);
+        }
+    }
 }
 

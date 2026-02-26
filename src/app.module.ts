@@ -13,6 +13,7 @@ import { MatchingModule } from './matching/matching.module';
 import { NotMatchingModule } from './not-matching/not-matching.module';
 import { ProviderModule } from './provider/provider.module';
 import { PayConfigModule } from './pay-config/pay-config.module';
+import { TaxesDeductionsModule } from './taxes-deductions/taxes-deductions.module';
 
 @Module({
   imports: [
@@ -28,9 +29,9 @@ import { PayConfigModule } from './pay-config/pay-config.module';
     RolesModule,
     MatchingModule,
     NotMatchingModule,
-    NotMatchingModule,
     ProviderModule,
-    PayConfigModule
+    PayConfigModule,
+    TaxesDeductionsModule
   ],
   providers: [
     {
